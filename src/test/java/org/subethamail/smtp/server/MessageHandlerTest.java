@@ -1,17 +1,9 @@
 package org.subethamail.smtp.server;
 
-import java.io.IOException;
-import java.io.InputStream;
-
-import javax.mail.MessagingException;
-
-import mockit.Expectations;
-import mockit.Mocked;
-
+import org.easymock.EasyMock;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-import org.subethamail.smtp.MessageContext;
 import org.subethamail.smtp.MessageHandler;
 import org.subethamail.smtp.MessageHandlerFactory;
 import org.subethamail.smtp.RejectException;
@@ -19,24 +11,33 @@ import org.subethamail.smtp.client.SMTPException;
 import org.subethamail.smtp.client.SmartClient;
 import org.subethamail.smtp.util.TextUtils;
 
+import javax.mail.MessagingException;
+import java.io.IOException;
+
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.anyString;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+
 /**
  * This class tests whether the event handler methods defined in MessageHandler 
  * are called at the appropriate times and in good order.  
  */
 public class MessageHandlerTest {
-	@Mocked
 	private MessageHandlerFactory messageHandlerFactory;
 
-	@Mocked
 	private MessageHandler messageHandler;
 
-	@Mocked
 	private MessageHandler messageHandler2;
 
 	private SMTPServer smtpServer;
 
 	@Before
 	public void setup() {
+		messageHandlerFactory = EasyMock.createMock(MessageHandlerFactory.class);
+		messageHandler = EasyMock.createMock(MessageHandler.class);
+		messageHandler2 = EasyMock.createMock(MessageHandler.class);
+
 		smtpServer = new SMTPServer(messageHandlerFactory);
 		smtpServer.setPort(2566);
 		smtpServer.start();
@@ -44,18 +45,21 @@ public class MessageHandlerTest {
 
 	@Test
 	public void testCompletedMailTransaction() throws Exception {
+		expect(messageHandlerFactory.create(anyObject())).andReturn(messageHandler).once();
 
-		new Expectations() {
-			{
-				messageHandlerFactory.create((MessageContext) any);
-				result = messageHandler;
+		messageHandler.from(anyString());
+		expectLastCall().once();
 
-				messageHandler.from(anyString);
-				messageHandler.recipient(anyString);
-				messageHandler.data((InputStream) any);
-				messageHandler.done();
-			}
-		};
+		messageHandler.recipient(anyString());
+		expectLastCall().once();
+
+		messageHandler.data(anyObject());
+		expectLastCall().once();
+
+		messageHandler.done();
+		expectLastCall().once();
+
+		replayAll();
 
 		SmartClient client = new SmartClient("localhost", smtpServer.getPort(),
 				"localhost");
@@ -66,111 +70,121 @@ public class MessageHandlerTest {
 		client.dataEnd();
 		client.quit();
 		smtpServer.stop(); // wait for the server to catch up
+
+		verifyAll();
 	}
 
 	@Test
 	public void testDisconnectImmediately() throws Exception {
-
-		new Expectations() {
-			{
-				messageHandlerFactory.create((MessageContext) any);
-				times = 0;
-			}
-		};
-
+		expect(messageHandlerFactory.create(anyObject())).andStubThrow(new AssertionError("Should not be called"));
+//		new Expectations() {
+//			{
+//				messageHandlerFactory.create((MessageContext) any);
+//				times = 0;
+//			}
+//		};
+		replayAll();
 		SmartClient client = new SmartClient("localhost", smtpServer.getPort(),
 				"localhost");
 		client.quit();
 		smtpServer.stop(); // wait for the server to catch up
+		verifyAll();
 	}
 
 	@Test
 	public void testAbortedMailTransaction() throws Exception {
+		expect(messageHandlerFactory.create(anyObject())).andReturn(messageHandler).once();
 
-		new Expectations() {
-			{
-				messageHandlerFactory.create((MessageContext) any);
-				result = messageHandler;
+		messageHandler.from(anyString());
+		expectLastCall().once();
 
-				messageHandler.from(anyString);
-				messageHandler.done();
-			}
-		};
+		messageHandler.done();
+		expectLastCall().once();
+
+		replayAll();
 
 		SmartClient client = new SmartClient("localhost", smtpServer.getPort(),
 				"localhost");
 		client.from("john@example.com");
 		client.quit();
 		smtpServer.stop(); // wait for the server to catch up
+
+		verifyAll();
 	}
 
 	@Test
 	public void testTwoMailsInOneSession() throws Exception {
+        expect(messageHandlerFactory.create(anyObject())).andReturn(messageHandler).once();
 
-		new Expectations() {
-			{
-				messageHandlerFactory.create((MessageContext) any);
-				result = messageHandler;
+        messageHandler.from("john1@example.com");
+        expectLastCall().once();
 
-				onInstance(messageHandler).from(anyString);
-				onInstance(messageHandler).recipient(anyString);
-				onInstance(messageHandler).data((InputStream) any);
-				onInstance(messageHandler).done();
+        messageHandler.recipient("jane1@example.com");
+        expectLastCall().once();
 
-				messageHandlerFactory.create((MessageContext) any);
-				result = messageHandler2;
+        messageHandler.data(anyObject());
+        expectLastCall().once();
 
-				onInstance(messageHandler2).from(anyString);
-				onInstance(messageHandler2).recipient(anyString);
-				onInstance(messageHandler2).data((InputStream) any);
-				onInstance(messageHandler2).done();
-			}
-		};
+        messageHandler.done();
+        expectLastCall().once();
 
-		SmartClient client = new SmartClient("localhost", smtpServer.getPort(),
-				"localhost");
+        expect(messageHandlerFactory.create(anyObject())).andReturn(messageHandler2).once();
 
-		client.from("john1@example.com");
-		client.to("jane1@example.com");
-		client.dataStart();
-		client.dataWrite(TextUtils.getAsciiBytes("body1"), 5);
-		client.dataEnd();
+        messageHandler2.from("john2@example.com");
+        expectLastCall().once();
 
-		client.from("john2@example.com");
-		client.to("jane2@example.com");
-		client.dataStart();
-		client.dataWrite(TextUtils.getAsciiBytes("body2"), 5);
-		client.dataEnd();
+        messageHandler2.recipient("jane2@example.com");
+        expectLastCall().once();
 
-		client.quit();
+        messageHandler2.data(anyObject());
+        expectLastCall().once();
 
-		smtpServer.stop(); // wait for the server to catch up
-	}
-	
-	/**
+        messageHandler2.done();
+        expectLastCall().once();
+
+        replayAll();
+
+        SmartClient client = new SmartClient("localhost", smtpServer.getPort(),
+                "localhost");
+
+        client.from("john1@example.com");
+        client.to("jane1@example.com");
+        client.dataStart();
+        client.dataWrite(TextUtils.getAsciiBytes("body1"), 5);
+        client.dataEnd();
+
+        client.from("john2@example.com");
+        client.to("jane2@example.com");
+        client.dataStart();
+        client.dataWrite(TextUtils.getAsciiBytes("body2"), 5);
+        client.dataEnd();
+
+        client.quit();
+
+        smtpServer.stop(); // wait for the server to catch up
+
+        verifyAll();
+    }
+
+    /**
 	 * Test for issue 56: rejecting a Mail From causes IllegalStateException in
 	 * the next Mail From attempt.
 	 * @see <a href=http://code.google.com/p/subethasmtp/issues/detail?id=56>Issue 56</a>
 	 */
 	@Test
-	public void testMailFromRejectedFirst() throws IOException, MessagingException
-	{
-		new Expectations() {
-			{
-				messageHandlerFactory.create((MessageContext) any);
-				result = messageHandler;
+	public void testMailFromRejectedFirst() throws IOException, MessagingException {
+		expect(messageHandlerFactory.create(anyObject())).andReturn(messageHandler).anyTimes();
 
-				onInstance(messageHandler).from(anyString);
-				result = new RejectException("Test MAIL FROM rejection");
-				onInstance(messageHandler).done();
+		messageHandler.from("john1@example.com");
+		expectLastCall().andStubThrow(new RejectException("Test MAIL FROM rejection"));
 
-				messageHandlerFactory.create((MessageContext) any);
-				result = messageHandler2;
+		messageHandler.from("john2@example.com");
+		expectLastCall().once();
 
-				onInstance(messageHandler2).from(anyString);
-				onInstance(messageHandler2).done();
-			}
-		};
+		messageHandler.done();
+		expectLastCall().times(2);
+
+		replayAll();
 
 		SmartClient client = new SmartClient("localhost", smtpServer.getPort(),
 				"localhost");
@@ -182,12 +196,22 @@ public class MessageHandlerTest {
 			expectedRejectReceived = true;
 		}
 		Assert.assertTrue(expectedRejectReceived);
-		
+
 		client.from("john2@example.com");
 		client.quit();
 
 		smtpServer.stop(); // wait for the server to catch up
-		
+
+		verifyAll();
+
+	}
+
+	private void replayAll() {
+		EasyMock.replay(messageHandlerFactory, messageHandler, messageHandler2);
+	}
+
+	private void verifyAll() {
+		EasyMock.verify(messageHandlerFactory, messageHandler, messageHandler2);
 	}
 	
 }
