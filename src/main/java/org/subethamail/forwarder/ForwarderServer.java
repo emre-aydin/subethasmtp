@@ -43,7 +43,7 @@ public class ForwarderServer {
                 try {
                     MimeMessage mimeMessage = new MimeMessage(createSession(username, password), data);
                     sendMail(mimeMessage);
-                } catch (MessagingException | RuntimeException e) {
+                } catch (Throwable e) {
                     LOG.warn(e.getMessage(), e);
                 }
             }
@@ -52,11 +52,11 @@ public class ForwarderServer {
         return server;
     }
 
-    private static String getPassword(String[] args) {
+    private static String getUsername(String[] args) {
         return args[0];
     }
 
-    private static String getUsername(String[] args) {
+    private static String getPassword(String[] args) {
         return args[1];
     }
 
